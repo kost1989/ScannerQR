@@ -1,29 +1,29 @@
-package com.example.scannerqr;
+package com.example.scannerqr; // Изменено на scannerqr
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
-import androidx.annotation.OptIn;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.camera.core.Camera;
 import androidx.camera.core.CameraSelector;
-import androidx.camera.core.ExperimentalGetImage;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.ImageProxy;
 import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.core.content.ContextCompat;
 
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
-import android.os.Handler;
 import android.text.SpannableString;
 import android.text.method.LinkMovementMethod;
 import android.text.style.ClickableSpan;
 import android.util.Log;
 import android.util.Size;
 import android.view.View;
+import android.widget.Button;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -35,7 +35,7 @@ import com.google.mlkit.vision.barcode.BarcodeScanning;
 import com.google.mlkit.vision.common.InputImage;
 
 import java.util.List;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
@@ -43,82 +43,97 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "QRScanner";
     private androidx.camera.view.PreviewView previewView;
     private TextView resultText;
-    private ExecutorService cameraExecutor;
+    private LinearLayout buttonLayout;
+    private Button btnCopy;
+    private Button btnRescan;
+    private Executor cameraExecutor;
     private BarcodeScanner barcodeScanner;
-    private ProcessCameraProvider cameraProvider;
     private boolean isScanning = true;
-    private Camera camera;
-    private Handler resetHandler = new Handler();
-    private Runnable resetRunnable;
+    private String lastResult = "";
 
     private final ActivityResultLauncher<String> requestPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
                 if (isGranted) {
                     startCamera();
                 } else {
-                    Toast.makeText(this, "Camera permission is required", Toast.LENGTH_LONG).show();
-                    // Не закрываем приложение, а показываем сообщение
+                    Toast.makeText(MainActivity.this, "Camera permission is required", Toast.LENGTH_LONG).show();
                     resultText.setText("Camera permission required");
                 }
             });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
+        try {
+            super.onCreate(savedInstanceState);
+            setContentView(R.layout.activity_main);
+            Log.d(TAG, "onCreate started");
 
-        previewView = findViewById(R.id.preview_view);
-        resultText = findViewById(R.id.result_text);
+            // Инициализация UI компонентов
+            previewView = findViewById(R.id.preview_view);
+            resultText = findViewById(R.id.result_text);
+            buttonLayout = findViewById(R.id.button_layout);
+            btnCopy = findViewById(R.id.btn_copy);
+            btnRescan = findViewById(R.id.btn_rescan);
 
-        // Инициализация обработчика сброса
-        resetRunnable = () -> {
-            isScanning = true;
-            resultText.setText(R.string.scanning_hint);
-        };
+            // Проверка инициализации кнопок
+            if (btnCopy == null || btnRescan == null) {
+                Log.e(TAG, "Buttons not found in layout");
+                Toast.makeText(this, "UI initialization error", Toast.LENGTH_LONG).show();
+                finish();
+                return;
+            }
 
-        // Инициализация сканера QR-кодов
-        BarcodeScannerOptions options = new BarcodeScannerOptions.Builder()
-                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-                .build();
-        barcodeScanner = BarcodeScanning.getClient(options);
+            // Инициализация сканера QR-кодов
+            BarcodeScannerOptions options = new BarcodeScannerOptions.Builder()
+                    .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                    .build();
+            barcodeScanner = BarcodeScanning.getClient(options);
 
-        // Инициализация исполнителя камеры
-        cameraExecutor = Executors.newSingleThreadExecutor();
+            // Инициализация исполнителя камеры
+            cameraExecutor = Executors.newSingleThreadExecutor();
 
-        // Запрос разрешений камеры
-        requestCameraPermission();
-    }
+            // Настройка кнопок
+            btnCopy.setOnClickListener(v -> copyToClipboard());
+            btnRescan.setOnClickListener(v -> restartScanning());
 
-    private void requestCameraPermission() {
-        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            startCamera();
-        } else {
-            // Отложить запуск камеры до получения разрешения
-            requestPermissionLauncher.launch(android.Manifest.permission.CAMERA);
+            // Проверка разрешений камеры
+            if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                startCamera();
+            } else {
+                requestPermissionLauncher.launch(android.Manifest.permission.CAMERA);
+            }
+
+            Log.d(TAG, "onCreate completed");
+        } catch (Exception e) {
+            Log.e(TAG, "Critical error in onCreate", e);
+            Toast.makeText(this, "App initialization failed", Toast.LENGTH_LONG).show();
+            finish();
         }
     }
 
     private void startCamera() {
-        ListenableFuture<ProcessCameraProvider> cameraProviderFuture =
-                ProcessCameraProvider.getInstance(this);
+        Log.d(TAG, "Starting camera");
+        try {
+            ListenableFuture<ProcessCameraProvider> cameraProviderFuture =
+                    ProcessCameraProvider.getInstance(this);
 
-        cameraProviderFuture.addListener(() -> {
-            try {
-                cameraProvider = cameraProviderFuture.get();
-                bindCameraUseCases();
-            } catch (Exception e) {
-                Log.e(TAG, "Camera initialization failed", e);
-                Toast.makeText(this, "Camera init failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
-            }
-        }, ContextCompat.getMainExecutor(this));
+            cameraProviderFuture.addListener(() -> {
+                try {
+                    ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
+                    bindCameraUseCases(cameraProvider);
+                } catch (Exception e) {
+                    Log.e(TAG, "Camera initialization failed", e);
+                    Toast.makeText(this, "Camera init failed", Toast.LENGTH_LONG).show();
+                }
+            }, ContextCompat.getMainExecutor(this));
+        } catch (Exception e) {
+            Log.e(TAG, "Error starting camera", e);
+        }
     }
 
-    private void bindCameraUseCases() {
-        if (cameraProvider == null) {
-            return;
-        }
-
+    private void bindCameraUseCases(ProcessCameraProvider cameraProvider) {
+        Log.d(TAG, "Binding camera use cases");
         try {
             // Отвязать все предыдущие use cases
             cameraProvider.unbindAll();
@@ -141,58 +156,98 @@ public class MainActivity extends AppCompatActivity {
             imageAnalysis.setAnalyzer(cameraExecutor, this::analyzeImage);
 
             // Привязка к жизненному циклу
-            camera = cameraProvider.bindToLifecycle(
+            cameraProvider.bindToLifecycle(
                     this,
                     cameraSelector,
                     preview,
                     imageAnalysis
             );
+
+            Log.d(TAG, "Camera successfully bound");
         } catch (Exception e) {
             Log.e(TAG, "Camera binding failed", e);
         }
     }
 
-    @OptIn(markerClass = ExperimentalGetImage.class)
     private void analyzeImage(ImageProxy imageProxy) {
         if (!isScanning || imageProxy.getImage() == null) {
             imageProxy.close();
             return;
         }
 
-        InputImage image = InputImage.fromMediaImage(
-                imageProxy.getImage(),
-                imageProxy.getImageInfo().getRotationDegrees()
-        );
+        try {
+            InputImage image = InputImage.fromMediaImage(
+                    imageProxy.getImage(),
+                    imageProxy.getImageInfo().getRotationDegrees()
+            );
 
-        barcodeScanner.process(image)
-                .addOnSuccessListener(barcodes -> {
-                    if (!barcodes.isEmpty()) {
-                        Barcode barcode = barcodes.get(0);
-                        String rawValue = barcode.getRawValue();
-                        if (rawValue != null) {
-                            isScanning = false; // Временно останавливаем сканирование
-                            runOnUiThread(() -> displayResult(rawValue));
+            barcodeScanner.process(image)
+                    .addOnSuccessListener(barcodes -> {
+                        if (!barcodes.isEmpty()) {
+                            Barcode barcode = barcodes.get(0);
+                            String rawValue = barcode.getRawValue();
+                            if (rawValue != null) {
+                                isScanning = false;
+                                lastResult = rawValue;
+                                runOnUiThread(() -> {
+                                    displayResult(rawValue);
+                                    showButtons();
+                                });
+                            }
                         }
-                    }
-                })
-                .addOnFailureListener(e -> {
-                    Log.e(TAG, "Barcode scanning failed", e);
-                })
-                .addOnCompleteListener(task -> imageProxy.close());
+                    })
+                    .addOnFailureListener(e -> {
+                        Log.e(TAG, "Barcode scanning failed", e);
+                    })
+                    .addOnCompleteListener(task -> imageProxy.close());
+        } catch (Exception e) {
+            Log.e(TAG, "Image analysis error", e);
+            imageProxy.close();
+        }
     }
 
     private void displayResult(String text) {
-        // Отменить предыдущий сброс, если он был запланирован
-        resetHandler.removeCallbacks(resetRunnable);
-
         if (text.startsWith("http://") || text.startsWith("https://")) {
             makeTextClickable(text);
         } else {
             resultText.setText(text);
         }
+    }
 
-        // Автоматический сброс через 5 секунд для продолжения сканирования
-        resetHandler.postDelayed(resetRunnable, 5000);
+    private void showButtons() {
+        buttonLayout.setVisibility(View.VISIBLE);
+    }
+
+    private void hideButtons() {
+        buttonLayout.setVisibility(View.GONE);
+    }
+
+    private void copyToClipboard() {
+        try {
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            ClipData clip = ClipData.newPlainText("QR Result", lastResult);
+            clipboard.setPrimaryClip(clip);
+            Toast.makeText(this, "Text copied", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "Copy failed", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void restartScanning() {
+        isScanning = true;
+        lastResult = "";
+        resultText.setText(R.string.scanning_hint);
+        hideButtons();
+        startCamera();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            startCamera();
+        }
     }
 
     private void makeTextClickable(String url) {
@@ -214,54 +269,6 @@ public class MainActivity extends AppCompatActivity {
             startActivity(intent);
         } catch (Exception e) {
             Toast.makeText(this, "Invalid URL: " + url, Toast.LENGTH_LONG).show();
-        }
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        // Сбросить состояние при возврате в приложение
-        isScanning = true;
-        resultText.setText(R.string.scanning_hint);
-
-        // Перезапустить камеру, если разрешение есть
-        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED) {
-
-            if (cameraProvider != null) {
-                bindCameraUseCases();
-            } else {
-                startCamera();
-            }
-        }
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        isScanning = false;
-        resetHandler.removeCallbacks(resetRunnable);
-
-        // Освободить ресурсы камеры
-        if (cameraProvider != null) {
-            cameraProvider.unbindAll();
-        }
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        // Очистить обработчики
-        resetHandler.removeCallbacks(resetRunnable);
-
-        // Завершить исполнитель камеры
-        if (cameraExecutor != null) {
-            cameraExecutor.shutdown();
-        }
-
-        // Закрыть сканер штрих-кодов
-        if (barcodeScanner != null) {
-            barcodeScanner.close();
         }
     }
 }
