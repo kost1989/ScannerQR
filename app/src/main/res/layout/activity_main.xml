@@ -1,39 +1,96 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@android:color/black">
+    android:background="@android:color/black"
+    android:padding="16dp">
 
+    <!-- Область предпросмотра камеры -->
     <androidx.camera.view.PreviewView
         android:id="@+id/preview_view"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/result_container"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHeight_percent="0.7"/>
 
-    <TextView
-        android:id="@+id/result_text"
-        android:layout_width="match_parent"
+    <!-- Контейнер для результата и кнопок -->
+    <LinearLayout
+        android:id="@+id/result_container"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:background="#CC000000"
+        android:orientation="vertical"
+        android:background="#40000000"
         android:padding="16dp"
-        android:text="@string/scanning_hint"
+        app:layout_constraintTop_toBottomOf="@id/preview_view"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <!-- Текст результата -->
+        <TextView
+            android:id="@+id/result_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/scanning_hint"
+            android:textColor="@android:color/white"
+            android:textSize="18sp"
+            android:padding="8dp"
+            android:gravity="center"
+            android:autoLink="web"
+            android:linksClickable="true"
+            android:focusable="true"/>
+
+        <!-- Контейнер для кнопок -->
+        <LinearLayout
+            android:id="@+id/button_layout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:visibility="gone"
+            android:layout_marginTop="16dp">
+
+            <!-- Кнопка копирования -->
+            <Button
+                android:id="@+id/btn_copy"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="@string/copy_text"
+                android:backgroundTint="@color/colorPrimary"
+                android:textColor="@android:color/white"/>
+
+            <!-- Кнопка повторного сканирования -->
+            <Button
+                android:id="@+id/btn_rescan"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/rescan_text"
+                android:backgroundTint="@color/colorAccent"
+                android:textColor="@android:color/white"/>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Заглушка при отсутствии разрешения -->
+    <TextView
+        android:id="@+id/permission_text"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:text="@string/permission_required"
         android:textColor="@android:color/white"
         android:textSize="18sp"
-        app:layout_constraintBottom_toBottomOf="parent" />
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
 
-    <Button
-        android:id="@+id/button_layout"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:padding="16dp"
-        android:text="@string/scanning_hint"
-        app:layout_constraintBottom_toBottomOf="parent" />
-
-    <Button
-        android:id="@+id/btn_copy"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:padding="16dp"
-        android:text="@string/copy_text"
-        app:layout_constraintBottom_toBottomOf="parent" />
 </androidx.constraintlayout.widget.ConstraintLayout>

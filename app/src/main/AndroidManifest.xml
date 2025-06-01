@@ -8,9 +8,9 @@
     <uses-feature android:name="android.hardware.camera.any" android:required="true" />
 
     <application
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@mipmap/ic_main"
         android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:roundIcon="@mipmap/ic_main_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
 
@@ -25,5 +25,4 @@
             </intent-filter>
         </activity>
     </application>
-
 </manifest>

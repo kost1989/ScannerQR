@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">QR Scanner</string>
     <string name="scanning_hint">Наведите камеру на QR-код</string>
-    <string name="copy_text">Копировать</string>
-    <string name="rescan_text">Сканировать</string>
+    <string name="copy_text">КОПИРОВАТЬ</string>
+    <string name="rescan_text">СКАНИРОВАТЬ</string>
+    <string name="permission_required">Требуется доступ к камере\n\nПожалуйста, предоставьте разрешение в настройках</string>
 </resources>
