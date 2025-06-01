@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace 'com.example.scannerqr'  // Изменено на scannerqr
+    namespace 'ru.ikostyukov.scannerqr'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.example.scannerqr"  // Изменено на scannerqr
+        applicationId "ru.ikostyukov.scannerqr"
         minSdk 31
         targetSdk 34
         versionCode 1
