@@ -17,6 +17,7 @@ import androidx.core.content.ContextCompat;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
 import android.text.SpannableString;
 import android.text.method.LinkMovementMethod;
 import android.text.style.ClickableSpan;
@@ -47,14 +48,17 @@ public class MainActivity extends AppCompatActivity {
     private ProcessCameraProvider cameraProvider;
     private boolean isScanning = true;
     private Camera camera;
+    private Handler resetHandler = new Handler();
+    private Runnable resetRunnable;
 
     private final ActivityResultLauncher<String> requestPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
                 if (isGranted) {
                     startCamera();
                 } else {
-                    Toast.makeText(this, "Camera permission denied", Toast.LENGTH_SHORT).show();
-                    finish();
+                    Toast.makeText(this, "Camera permission is required", Toast.LENGTH_LONG).show();
+                    // Не закрываем приложение, а показываем сообщение
+                    resultText.setText("Camera permission required");
                 }
             });
 
@@ -66,16 +70,22 @@ public class MainActivity extends AppCompatActivity {
         previewView = findViewById(R.id.preview_view);
         resultText = findViewById(R.id.result_text);
 
-        // Initialize ML Kit Barcode Scanner
+        // Инициализация обработчика сброса
+        resetRunnable = () -> {
+            isScanning = true;
+            resultText.setText(R.string.scanning_hint);
+        };
+
+        // Инициализация сканера QR-кодов
         BarcodeScannerOptions options = new BarcodeScannerOptions.Builder()
                 .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
                 .build();
         barcodeScanner = BarcodeScanning.getClient(options);
 
-        // Initialize camera executor
+        // Инициализация исполнителя камеры
         cameraExecutor = Executors.newSingleThreadExecutor();
 
-        // Request camera permissions
+        // Запрос разрешений камеры
         requestCameraPermission();
     }
 
@@ -84,6 +94,7 @@ public class MainActivity extends AppCompatActivity {
                 android.content.pm.PackageManager.PERMISSION_GRANTED) {
             startCamera();
         } else {
+            // Отложить запуск камеры до получения разрешения
             requestPermissionLauncher.launch(android.Manifest.permission.CAMERA);
         }
     }
@@ -109,19 +120,19 @@ public class MainActivity extends AppCompatActivity {
         }
 
         try {
-            // Unbind existing use cases
+            // Отвязать все предыдущие use cases
             cameraProvider.unbindAll();
 
-            // Camera selector - default back camera
+            // Выбор камеры (задняя)
             CameraSelector cameraSelector = new CameraSelector.Builder()
                     .requireLensFacing(CameraSelector.LENS_FACING_BACK)
                     .build();
 
-            // Preview
+            // Настройка предпросмотра
             Preview preview = new Preview.Builder().build();
             preview.setSurfaceProvider(previewView.getSurfaceProvider());
 
-            // Image analysis
+            // Настройка анализа изображения
             ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
                     .setTargetResolution(new Size(1280, 720))
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -129,7 +140,7 @@ public class MainActivity extends AppCompatActivity {
 
             imageAnalysis.setAnalyzer(cameraExecutor, this::analyzeImage);
 
-            // Bind to lifecycle
+            // Привязка к жизненному циклу
             camera = cameraProvider.bindToLifecycle(
                     this,
                     cameraSelector,
@@ -141,7 +152,8 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    @OptIn(markerClass = ExperimentalGetImage.class) private void analyzeImage(ImageProxy imageProxy) {
+    @OptIn(markerClass = ExperimentalGetImage.class)
+    private void analyzeImage(ImageProxy imageProxy) {
         if (!isScanning || imageProxy.getImage() == null) {
             imageProxy.close();
             return;
@@ -158,7 +170,7 @@ public class MainActivity extends AppCompatActivity {
                         Barcode barcode = barcodes.get(0);
                         String rawValue = barcode.getRawValue();
                         if (rawValue != null) {
-                            isScanning = false;
+                            isScanning = false; // Временно останавливаем сканирование
                             runOnUiThread(() -> displayResult(rawValue));
                         }
                     }
@@ -170,11 +182,17 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void displayResult(String text) {
+        // Отменить предыдущий сброс, если он был запланирован
+        resetHandler.removeCallbacks(resetRunnable);
+
         if (text.startsWith("http://") || text.startsWith("https://")) {
             makeTextClickable(text);
         } else {
             resultText.setText(text);
         }
+
+        // Автоматический сброс через 5 секунд для продолжения сканирования
+        resetHandler.postDelayed(resetRunnable, 5000);
     }
 
     private void makeTextClickable(String url) {
@@ -202,12 +220,19 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        // Reset scanning when returning to app
+        // Сбросить состояние при возврате в приложение
         isScanning = true;
         resultText.setText(R.string.scanning_hint);
 
-        if (cameraProvider == null) {
-            requestCameraPermission();
+        // Перезапустить камеру, если разрешение есть
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED) {
+
+            if (cameraProvider != null) {
+                bindCameraUseCases();
+            } else {
+                startCamera();
+            }
         }
     }
 
@@ -215,6 +240,9 @@ public class MainActivity extends AppCompatActivity {
     protected void onPause() {
         super.onPause();
         isScanning = false;
+        resetHandler.removeCallbacks(resetRunnable);
+
+        // Освободить ресурсы камеры
         if (cameraProvider != null) {
             cameraProvider.unbindAll();
         }
@@ -223,12 +251,15 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        // Shutdown camera executor
+        // Очистить обработчики
+        resetHandler.removeCallbacks(resetRunnable);
+
+        // Завершить исполнитель камеры
         if (cameraExecutor != null) {
             cameraExecutor.shutdown();
         }
 
-        // Close barcode scanner
+        // Закрыть сканер штрих-кодов
         if (barcodeScanner != null) {
             barcodeScanner.close();
         }
