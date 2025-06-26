@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">QR Scanner</string>
+    <string name="app_name">Сканнер QR-кода</string>
     <string name="scanning_hint">Наведите камеру на QR-код</string>
     <string name="copy_text">КОПИРОВАТЬ</string>
     <string name="rescan_text">СКАНИРОВАТЬ</string>

@@ -7,7 +7,7 @@
     android:background="@android:color/black"
     android:padding="16dp">
 
-    <!-- Область предпросмотра камеры -->
+    <!-- PreviewView с уникальным ID -->
     <androidx.camera.view.PreviewView
         android:id="@+id/preview_view"
         android:layout_width="0dp"
@@ -18,7 +18,7 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintHeight_percent="0.7"/>
 
-    <!-- Контейнер для результата и кнопок -->
+    <!-- Контейнер результатов -->
     <LinearLayout
         android:id="@+id/result_container"
         android:layout_width="0dp"
@@ -40,12 +40,9 @@
             android:textColor="@android:color/white"
             android:textSize="18sp"
             android:padding="8dp"
-            android:gravity="center"
-            android:autoLink="web"
-            android:linksClickable="true"
-            android:focusable="true"/>
+            android:gravity="center"/>
 
-        <!-- Контейнер для кнопок -->
+        <!-- Кнопки действий -->
         <LinearLayout
             android:id="@+id/button_layout"
             android:layout_width="match_parent"
@@ -55,7 +52,6 @@
             android:visibility="gone"
             android:layout_marginTop="16dp">
 
-            <!-- Кнопка копирования -->
             <Button
                 android:id="@+id/btn_copy"
                 android:layout_width="0dp"
@@ -66,7 +62,6 @@
                 android:backgroundTint="@color/colorPrimary"
                 android:textColor="@android:color/white"/>
 
-            <!-- Кнопка повторного сканирования -->
             <Button
                 android:id="@+id/btn_rescan"
                 android:layout_width="0dp"
@@ -78,7 +73,7 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- Заглушка при отсутствии разрешения -->
+    <!-- Заглушка разрешений -->
     <TextView
         android:id="@+id/permission_text"
         android:layout_width="match_parent"

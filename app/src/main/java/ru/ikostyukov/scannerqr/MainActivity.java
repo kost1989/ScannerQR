@@ -34,29 +34,34 @@ import com.google.mlkit.vision.barcode.BarcodeScanning;
 import com.google.mlkit.vision.barcode.common.Barcode;
 import com.google.mlkit.vision.common.InputImage;
 
-import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "QRScanner";
     private androidx.camera.view.PreviewView previewView;
     private TextView resultText;
+    private TextView permissionText;
     private LinearLayout buttonLayout;
     private Button btnCopy;
     private Button btnRescan;
-    private Executor cameraExecutor;
+    private ExecutorService cameraExecutor;
     private BarcodeScanner barcodeScanner;
-    private boolean isScanning = true;
+    private ProcessCameraProvider cameraProvider;
+    private final AtomicBoolean shouldAnalyze = new AtomicBoolean(true);
     private String lastResult = "";
 
     private final ActivityResultLauncher<String> requestPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
                 if (isGranted) {
+                    permissionText.setVisibility(View.GONE);
                     startCamera();
                 } else {
-                    Toast.makeText(MainActivity.this, "Camera permission is required", Toast.LENGTH_LONG).show();
-                    resultText.setText("Camera permission required");
+                    permissionText.setVisibility(View.VISIBLE);
+                    previewView.setVisibility(View.GONE);
+                    resultText.setVisibility(View.GONE);
                 }
             });
 
@@ -65,22 +70,14 @@ public class MainActivity extends AppCompatActivity {
         try {
             super.onCreate(savedInstanceState);
             setContentView(R.layout.activity_main);
-            Log.d(TAG, "onCreate started");
 
             // Инициализация UI компонентов
             previewView = findViewById(R.id.preview_view);
             resultText = findViewById(R.id.result_text);
+            permissionText = findViewById(R.id.permission_text);
             buttonLayout = findViewById(R.id.button_layout);
             btnCopy = findViewById(R.id.btn_copy);
             btnRescan = findViewById(R.id.btn_rescan);
-
-            // Проверка инициализации кнопок
-            if (btnCopy == null || btnRescan == null) {
-                Log.e(TAG, "Buttons not found in layout");
-                Toast.makeText(this, "UI initialization error", Toast.LENGTH_LONG).show();
-                finish();
-                return;
-            }
 
             // Инициализация сканера QR-кодов
             BarcodeScannerOptions options = new BarcodeScannerOptions.Builder()
@@ -98,12 +95,11 @@ public class MainActivity extends AppCompatActivity {
             // Проверка разрешений камеры
             if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) ==
                     android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                permissionText.setVisibility(View.GONE);
                 startCamera();
             } else {
                 requestPermissionLauncher.launch(android.Manifest.permission.CAMERA);
             }
-
-            Log.d(TAG, "onCreate completed");
         } catch (Exception e) {
             Log.e(TAG, "Critical error in onCreate", e);
             Toast.makeText(this, "App initialization failed", Toast.LENGTH_LONG).show();
@@ -112,47 +108,45 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startCamera() {
-        Log.d(TAG, "Starting camera");
-        try {
-            ListenableFuture<ProcessCameraProvider> cameraProviderFuture =
-                    ProcessCameraProvider.getInstance(this);
+        ListenableFuture<ProcessCameraProvider> cameraProviderFuture =
+                ProcessCameraProvider.getInstance(this);
 
-            cameraProviderFuture.addListener(() -> {
-                try {
-                    ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
-                    bindCameraUseCases(cameraProvider);
-                } catch (Exception e) {
-                    Log.e(TAG, "Camera initialization failed", e);
-                    Toast.makeText(this, "Camera init failed", Toast.LENGTH_LONG).show();
-                }
-            }, ContextCompat.getMainExecutor(this));
-        } catch (Exception e) {
-            Log.e(TAG, "Error starting camera", e);
-        }
+        cameraProviderFuture.addListener(() -> {
+            try {
+                cameraProvider = cameraProviderFuture.get();
+                bindCameraUseCases();
+            } catch (Exception e) {
+                Log.e(TAG, "Camera initialization failed", e);
+            }
+        }, ContextCompat.getMainExecutor(this));
     }
 
-    private void bindCameraUseCases(ProcessCameraProvider cameraProvider) {
-        Log.d(TAG, "Binding camera use cases");
+    private void bindCameraUseCases() {
+        if (cameraProvider == null) return;
+
         try {
             // Отвязать все предыдущие use cases
             cameraProvider.unbindAll();
 
-            // Выбор камеры (задняя)
             CameraSelector cameraSelector = new CameraSelector.Builder()
                     .requireLensFacing(CameraSelector.LENS_FACING_BACK)
                     .build();
 
-            // Настройка предпросмотра
             Preview preview = new Preview.Builder().build();
             preview.setSurfaceProvider(previewView.getSurfaceProvider());
 
-            // Настройка анализа изображения
             ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
                     .setTargetResolution(new Size(1280, 720))
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build();
 
-            imageAnalysis.setAnalyzer(cameraExecutor, this::analyzeImage);
+            imageAnalysis.setAnalyzer(cameraExecutor, imageProxy -> {
+                if (!shouldAnalyze.get() || imageProxy.getImage() == null) {
+                    imageProxy.close();
+                    return;
+                }
+                analyzeImage(imageProxy);
+            });
 
             // Привязка к жизненному циклу
             cameraProvider.bindToLifecycle(
@@ -161,19 +155,12 @@ public class MainActivity extends AppCompatActivity {
                     preview,
                     imageAnalysis
             );
-
-            Log.d(TAG, "Camera successfully bound");
         } catch (Exception e) {
             Log.e(TAG, "Camera binding failed", e);
         }
     }
 
     private void analyzeImage(ImageProxy imageProxy) {
-        if (!isScanning || imageProxy.getImage() == null) {
-            imageProxy.close();
-            return;
-        }
-
         try {
             InputImage image = InputImage.fromMediaImage(
                     imageProxy.getImage(),
@@ -186,7 +173,7 @@ public class MainActivity extends AppCompatActivity {
                             Barcode barcode = barcodes.get(0);
                             String rawValue = barcode.getRawValue();
                             if (rawValue != null) {
-                                isScanning = false;
+                                shouldAnalyze.set(false);
                                 lastResult = rawValue;
                                 runOnUiThread(() -> {
                                     displayResult(rawValue);
@@ -195,9 +182,7 @@ public class MainActivity extends AppCompatActivity {
                             }
                         }
                     })
-                    .addOnFailureListener(e -> {
-                        Log.e(TAG, "Barcode scanning failed", e);
-                    })
+                    .addOnFailureListener(e -> Log.e(TAG, "Barcode scanning failed", e))
                     .addOnCompleteListener(task -> imageProxy.close());
         } catch (Exception e) {
             Log.e(TAG, "Image analysis error", e);
@@ -233,19 +218,111 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void restartScanning() {
-        isScanning = true;
+        shouldAnalyze.set(true);
         lastResult = "";
         resultText.setText(R.string.scanning_hint);
         hideButtons();
-        startCamera();
+        bindCameraUseCases();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        shouldAnalyze.set(true);
+
         if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) ==
                 android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            startCamera();
+
+            if (cameraProvider != null) {
+                bindCameraUseCases();
+            } else {
+                startCamera();
+            }
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        shouldAnalyze.set(false);
+        releaseCamera();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        releaseAllResources();
+        finishAndRemoveTask();
+    }
+
+    private void releaseAllResources() {
+        // 1. Остановка анализа
+        shouldAnalyze.set(false);
+
+        // 2. Освобождение камеры
+        if (cameraProvider != null) {
+            try {
+                cameraProvider.unbindAll();
+                cameraProvider = null;
+            } catch (Exception e) {
+                Log.e(TAG, "Error releasing camera", e);
+            }
+        }
+
+        // 3. Закрытие сканера
+        if (barcodeScanner != null) {
+            try {
+                barcodeScanner.close();
+                barcodeScanner = null;
+            } catch (Exception e) {
+                Log.e(TAG, "Error closing barcode scanner", e);
+            }
+        }
+
+        // 4. Остановка исполнителя
+        if (cameraExecutor != null) {
+            try {
+                cameraExecutor.shutdownNow();
+                cameraExecutor = null;
+            } catch (Exception e) {
+                Log.e(TAG, "Error shutting down executor", e);
+            }
+        }
+    }
+
+    private void releaseCamera() {
+        if (cameraProvider != null) {
+            try {
+                cameraProvider.unbindAll();
+            } catch (Exception e) {
+                Log.e(TAG, "Error releasing camera", e);
+            }
+        }
+    }
+
+    private void releaseCameraResources() {
+        // Остановка анализа
+        shouldAnalyze.set(false);
+
+        // Освобождение камеры
+        releaseCamera();
+
+        // Закрытие сканера
+        if (barcodeScanner != null) {
+            try {
+                barcodeScanner.close();
+            } catch (Exception e) {
+                Log.e(TAG, "Error closing barcode scanner", e);
+            }
+        }
+
+        // Завершение исполнителя
+        if (cameraExecutor != null) {
+            try {
+                cameraExecutor.shutdownNow();
+            } catch (Exception e) {
+                Log.e(TAG, "Error shutting down executor", e);
+            }
         }
     }
 
